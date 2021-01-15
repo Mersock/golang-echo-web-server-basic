@@ -98,15 +98,33 @@ func mainAdmin(c echo.Context) error {
 	return c.String(http.StatusOK, "hello ")
 }
 
+/////////////// custom middleware ///////////////
+func ServerHeader(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		c.Response().Header().Set(echo.HeaderServer, "BlueBot/1.0")
+		c.Response().Header().Set("notReallyHeader", "thisNotHaveMeaning")
+		return next(c)
+	}
+}
+
 func main() {
 	fmt.Println("Welcome to the server")
 
 	e := echo.New()
 
+	e.Use(ServerHeader)
+
 	g := e.Group("/admin")
 	//logs middleware
 	g.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Format: `[${time_rfc3339}]  ${status} ${method} ${host}${path} ${latency_human}` + "\n",
+	}))
+
+	g.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+		if username == "knz" && password == "123" {
+			return true, nil
+		}
+		return false, nil
 	}))
 
 	g.GET("/main", mainAdmin)
