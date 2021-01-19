@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 )
@@ -25,6 +26,11 @@ type Dog struct {
 type Hamster struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+}
+
+type JwtClaims struct {
+	Name string `json:name`
+	jwt.StandardClaims
 }
 
 func hello(c echo.Context) error {
@@ -116,9 +122,33 @@ func login(c echo.Context) error {
 		cookie.Expires = time.Now().Add(48 * time.Hour)
 
 		c.SetCookie(cookie)
-		return c.String(http.StatusOK, "login complete")
+		token, err := createJwtToken()
+		if err != nil {
+			log.Println("Error Create JWT")
+			return c.String(http.StatusInternalServerError, "someting went wrong")
+		}
+		return c.JSON(http.StatusOK, map[string]string{
+			"message": "You were logged in!",
+			"token":   token,
+		})
 	}
 	return c.String(http.StatusUnauthorized, "login fail")
+}
+
+func createJwtToken() (string, error) {
+	claims := JwtClaims{
+		"Knz",
+		jwt.StandardClaims{
+			Id:        "main_user_id",
+			ExpiresAt: time.Now().Add(24 * time.Hour).Unix(),
+		},
+	}
+	rawToken := jwt.NewWithClaims(jwt.SigningMethodHS512, claims)
+	token, err := rawToken.SignedString([]byte("keySecret"))
+	if err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 /////////////// custom middleware ///////////////
@@ -147,6 +177,16 @@ func checkCookie(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+func mainJwt(c echo.Context) error {
+	user := c.Get("user")
+	token := user.(*jwt.Token)
+
+	claims := token.Claims.(jwt.MapClaims)
+
+	log.Println("User Name: ", claims["Name"], "User ID:", claims["jti"])
+	return c.String(http.StatusOK, "you are on the on the jwt group")
+}
+
 func main() {
 	fmt.Println("Welcome to the server")
 
@@ -156,6 +196,7 @@ func main() {
 
 	adminGrup := e.Group("/admin")
 	cookieGroup := e.Group("/cookie")
+	jwtGroup := e.Group("/jwt")
 
 	//logs middleware
 	adminGrup.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
@@ -169,11 +210,18 @@ func main() {
 		return false, nil
 	}))
 
+	jwtGroup.Use(middleware.JWTWithConfig(middleware.JWTConfig{
+		SigningMethod: "HS512",
+		SigningKey:    []byte("keySecret"),
+	}))
+
 	cookieGroup.Use(checkCookie)
 
 	adminGrup.GET("/main", mainAdmin)
 
 	cookieGroup.GET("/main", mainCookie)
+
+	jwtGroup.GET("/main", mainJwt)
 
 	e.GET("/login", login)
 	e.GET("/", hello)
